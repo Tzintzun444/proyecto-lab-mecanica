@@ -1,0 +1,55 @@
+# ==========================================
+# C++ & Build Artifacts
+# ==========================================
+build/
+out/
+bin/
+
+*.o
+*.obj
+*.exe
+*.dll
+*.so
+*.a
+*.lib
+*.out
+*.app
+
+# ==========================================
+# CMake
+# ==========================================
+CMakeCache.txt
+CMakeFiles/
+Makefile
+cmake_install.cmake
+compile_commands.json
+*.cmake
+
+# ==========================================
+# Python & Pybind11
+# ==========================================
+*.pyc
+*.pyo
+*.pyd
+__pycache__/
+.pytest_cache/
+.coverage
+venv/
+env/
+.venv
+
+# ==========================================
+# IDEs (VSCode, Visual Studio, etc.)
+# ==========================================
+.vscode/
+.vs/
+.idea/
+*.swp
+*.suo
+*.user
+
+# ==========================================
+# Docs (Doxygen)
+# ==========================================
+docs/html/
+docs/latex/
