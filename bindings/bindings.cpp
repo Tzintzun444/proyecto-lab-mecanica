@@ -1,24 +1,27 @@
 #include <pybind11/pybind11.h>
-#include <pybind11/stl.h> 
+#include <pybind11/stl.h> // Cabecera esencial: Permite la traducción mágica de std::vector de C++ a Listas de Python.
 #include "simulador.hpp"
 
+// Alias de espacio de nombres para mantener el código de envoltura limpio
 namespace py = pybind11;
 using namespace SimuladorAstrofisico;
 
 // ========================================================================
-// Módulo PyBind11
+// DEFINICIÓN DEL MÓDULO PYBIND11 (Exportación a Python)
 // ========================================================================
+// El nombre "simulador_impacto" debe ser exactamente igual al definido en el CMakeLists.
 PYBIND11_MODULE(simulador_impacto, m) {
-    m.doc() = "Módulo HPC de simulación de impactos de asteroides mediante Monte Carlo y Verlet."; // Docstring del módulo
+    m.doc() = "Módulo HPC para dinámica orbital N-Cuerpos. Proyecto de Laboratorio de Mecánica."; 
 
     // --------------------------------------------------------------------
-    // Exponiendo la Estructura de Datos SoA (Entrada)
+    // Exportación de la Estructura de Entrada (EstadoSistemaSoA)
     // --------------------------------------------------------------------
     py::class_<EstadoSistemaSoA>(m, "EstadoSistemaSoA", 
-        "Estructura orientada a datos (SoA) para las condiciones iniciales del sistema.")
-        .def(py::init<>(), "Constructor por defecto.")
+        "Carga los parámetros físicos (Masa, Radio, Vectores Cinéticos) hacia la memoria RAM (C++).")
+        .def(py::init<>(), "Inicializa una estructura vacía en la memoria.")
+        
+        // Mapeamos los atributos de C++ para que Python pueda escribir sobre ellos directamente
         .def_readwrite("num_cuerpos", &EstadoSistemaSoA::num_cuerpos)
-        // Gracias a <pybind11/stl.h>, Python interpretará estos std::vector como listas nativas de Python
         .def_readwrite("x", &EstadoSistemaSoA::x)
         .def_readwrite("y", &EstadoSistemaSoA::y)
         .def_readwrite("z", &EstadoSistemaSoA::z)
@@ -33,41 +36,40 @@ PYBIND11_MODULE(simulador_impacto, m) {
         .def_readwrite("nombres", &EstadoSistemaSoA::nombres);
 
     // --------------------------------------------------------------------
-    // Exponiendo la Estructura de Resultados (Salida)
+    // Exportación de la Estructura de Salida (ResultadosMonteCarlo)
     // --------------------------------------------------------------------
     py::class_<ResultadosMonteCarlo>(m, "ResultadosMonteCarlo", 
-        "Contenedor estadístico de los resultados de la simulación masiva.")
-        // Usamos def_readonly para que en Python estos valores no puedan ser mutados accidentalmente
+        "Contiene el desglose probabilístico retornado tras concluir el procesamiento.")
+        
+        // Usamos def_readonly para proteger la integridad estadística. 
+        // Evita que un usuario en Python altere los resultados accidentalmente.
         .def_readonly("total_simulaciones", &ResultadosMonteCarlo::total_simulaciones)
         .def_readonly("impactos_tierra", &ResultadosMonteCarlo::impactos_tierra)
         .def_readonly("probabilidad_impacto", &ResultadosMonteCarlo::probabilidad_impacto)
-        .def_readonly("desglose_colisiones", &ResultadosMonteCarlo::desglose_colisiones,
-            "Diccionario con el conteo de choques por cuerpo celeste.");
+        .def_readonly("desglose_colisiones", &ResultadosMonteCarlo::desglose_colisiones);
 
     // --------------------------------------------------------------------
-    // Exponiendo el Motor Principal
+    // Exportación de la Clase Principal (El Integrador)
     // --------------------------------------------------------------------
     py::class_<MotorVerletMonteCarlo>(m, "MotorVerletMonteCarlo",
-        "Motor numérico de alta precisión para N-Cuerpos.")
+        "Motor de integración Velocity Verlet acoplado a estadística de Monte Carlo.")
         
-        // Constructor con py::arg para permitir named arguments (kwargs) en Python
+        // Exponemos el constructor con argumentos etiquetados (kwargs) para mejor legibilidad
         .def(py::init<EstadoSistemaSoA, double, double>(),
              py::arg("estado_inicial"), 
              py::arg("paso_tiempo"), 
-             py::arg("t_max"),
-             "Inicializa el motor. Valida la consistencia de los arreglos SoA.")
+             py::arg("t_max"))
         
-        // Método de ejecución masiva
+        // Vinculamos la función pesada del proyecto
         .def("ejecutar_monte_carlo", &MotorVerletMonteCarlo::ejecutarMonteCarlo,
              py::arg("num_corridas"), 
              py::arg("sigma_pos"), 
              py::arg("sigma_vel"),
              
-             // ¡LA LÍNEA MÁS IMPORTANTE DEL BINDING!
-             // Libera el Global Interpreter Lock (GIL) de Python antes de ejecutar C++.
-             // Esto permite que OpenMP dispare todos los núcleos del CPU al 100% 
-             // sin que la máquina virtual de Python los frene. Al terminar, recupera el GIL.
+             // ** OPTIMIZACIÓN MULTITHREADING EXTREMA **
+             // Liberamos el GIL (Global Interpreter Lock) antes de entrar a las matemáticas.
+             // Sin esta directiva, Python frenaría los hilos de OpenMP dejándolos secuenciales.
              py::call_guard<py::gil_scoped_release>(),
              
-             "Ejecuta el bloque de simulaciones asíncronas de Monte Carlo.");
+             "Dispara la evaluación asíncrona de las órbitas usando los núcleos del CPU.");
 }

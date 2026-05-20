@@ -1,96 +1,128 @@
 import time
 import sys
 
-# Importamos nuestro motor C++ de alto rendimiento
+# Importamos la librería compilada dinámicamente en C++ (.pyd en Windows / .so en Linux)
 try:
     import simulador_impacto
 except ImportError as e:
-    print(f"Error al importar el módulo C++. Asegúrate de que el archivo .pyd/.so esté en esta carpeta.\nDetalle: {e}")
+    print(f"Error crítico: No se encontró el módulo C++ compilado. Revisa que el archivo exista.\nDetalles: {e}")
     sys.exit(1)
 
 def crear_condiciones_iniciales():
     """
-    Carga los vectores de estado (Posición y Velocidad) aproximados
-    para la época J2000. 
-    Unidades: Masas Solares, Unidades Astronómicas (UA) y Días.
+    Construye las condiciones límite basadas en efemérides astronómicas.
+    Unidades físicas obligatorias:
+    - Masas: Masas Solares (M_sun = 1.0)
+    - Distancias: Unidades Astronómicas (UA)
+    - Tiempos: Días terrestres
     """
+    # Instanciamos la memoria alineada en C++
     estado = simulador_impacto.EstadoSistemaSoA()
     
-    # 4 Cuerpos: Sol, Tierra, Júpiter, Asteroide
+    # Definimos la complejidad del entorno N-cuerpos
     estado.num_cuerpos = 4
     estado.nombres = ["Sol", "Tierra", "Jupiter", "Asteroide"]
     
-    # Masas en Masas Solares
+    # Asignación de campo másico. El asteroide se trata como "partícula de prueba" (0 masa)
     estado.masa = [
-        1.0,                    # Sol
+        1.0,                    # Sol (referencia gravitatoria)
         3.0027e-6,              # Tierra
-        9.543e-4,               # Júpiter
-        0.0                     # Asteroide (masa despreciable para su propia cinemática)
+        9.543e-4,               # Júpiter (principal perturbador caótico del sistema)
+        0.0                     # Asteroide Apolo genérico
     ]
     
-    # Radios físicos en UA (Cruciales para la detección de colisión)
+    # Umbrales de colisión física (Radios convertidos a UA)
     estado.radio = [
         0.00465,                # Sol (~696,000 km)
         4.2588e-5,              # Tierra (~6,371 km)
         4.67e-4,                # Júpiter (~69,911 km)
-        2.0e-7                  # Asteroide grande (~30 km)
+        2.0e-7                  # Asteroide tamaño mediano (~30 km)
     ]
-
-    # Posiciones iniciales (X, Y, Z) en UA
-    estado.x = [0.0,  0.983,   5.20,  0.995]
-    estado.y = [0.0,  0.174,   0.00,  0.050]
-    estado.z = [0.0, -0.0001, -0.12,  0.001]
     
-    # Velocidades iniciales (Vx, Vy, Vz) en UA/día
-    # La Tierra viaja a ~0.0172 UA/día (unos 30 km/s)
-    estado.vx = [0.0, -0.003,   0.000, -0.002]
-    estado.vy = [0.0,  0.0172,  0.0075, 0.0165]
-    estado.vz = [0.0,  0.000,   0.000,  0.001]
-    
-    # Inicializamos las aceleraciones en 0.0
-    estado.ax = [0.0] * estado.num_cuerpos
-    estado.ay = [0.0] * estado.num_cuerpos
-    estado.az = [0.0] * estado.num_cuerpos
-    
+    # Prueba estándar:
+    if False:
+        # Coordenadas espaciales
+        estado.x = [0.0,  0.983,   5.20,  0.995]
+        estado.y = [0.0,  0.174,   0.00,  0.050]
+        estado.z = [0.0, -0.0001, -0.12,  0.001]
+        
+        # Derivadas de posición (Velocidades orbitales)
+        # Ejemplo: La Tierra viaja a ~30 km/s (0.0172 UA/día)
+        estado.vx = [0.0, -0.003,   0.000, -0.002]
+        estado.vy = [0.0,  0.0172,  0.0075, 0.0165]
+        estado.vz = [0.0,  0.000,   0.000,  0.001]
+        
+        # Inicializamos las variables del vector aceleración como contenedores vacíos, 
+        # la ley de Gravitación Universal en el motor físico las llenará automáticamente en t=0.
+        estado.ax = [0.0] * estado.num_cuerpos
+        estado.ay = [0.0] * estado.num_cuerpos
+        estado.az = [0.0] * estado.num_cuerpos
+    else:
+        # === ESCENARIO DE CHOQUE SEGURO ===
+        # Tomamos las coordenadas exactas de la Tierra
+        x_tierra = 0.983
+        y_tierra = 0.174
+        z_tierra = -0.0001
+        
+        # Colocamos al asteroide a una distancia de 0.00001 UA (1,500 km) de la Tierra.
+        # El radio de la Tierra es 0.00004 UA (~6,300 km). 
+        # Por lo tanto, el asteroide literalmente está naciendo en el manto terrestre.
+        estado.x = [0.0, x_tierra,  5.20, x_tierra + 0.00001]
+        estado.y = [0.0, y_tierra,  0.00, y_tierra]
+        estado.z = [0.0, z_tierra, -0.12, z_tierra]
+        
+        # Velocidades (las igualamos para que no haya escape)
+        estado.vx = [0.0, -0.003,  0.000, -0.003]
+        estado.vy = [0.0,  0.0172, 0.0075, 0.0172]
+        estado.vz = [0.0,  0.000,  0.000,  0.000]
+        
+        estado.ax = [0.0] * 4
+        estado.ay = [0.0] * 4
+        estado.az = [0.0] * 4
+            
     return estado
 
 def main():
     print("="*60)
-    print(" MOTOR DE SIMULACIÓN MONTE CARLO - N-CUERPOS (C++ / OpenMP)")
+    print(" MOTOR HPC: SIMULACIÓN DE IMPACTOS MEDIANTE MONTE CARLO")
+    print(" Proyecto Integrador - Laboratorio de Mecánica Clásica")
     print("="*60)
     
-    # 1. Preparar datos
-    print("[1] Cargando efemérides base...")
+    # [FASE 1] Carga de memoria RAM (C++) desde variables en el intérprete (Python)
+    print("\n[1] Cargando condiciones iniciales en el formato Structure of Arrays...")
     estado_base = crear_condiciones_iniciales()
     
-    # 2. Configurar el integrador físico
-    # dt = 0.05 días (~1.2 horas por iteración)
-    # t_max = 365.25 * 10: Simular 10 años en el futuro
-    dt_dias = 0.05
-    tiempo_total_dias = 365.25 * 10 
+    # [FASE 2] Configuración temporal de la Ecuación Diferencial
+    dt_dias = 0.05                 # Resolución del integrador: Una iteración cada 1.2 horas físicas.
+    tiempo_total_dias = 365.25 * 10 # Tiempo futuro de proyección: 10 años (considerando bisiestos).
     
-    print(f"[2] Inicializando integrador Velocity Verlet...")
-    print(f"    - Paso de tiempo (dt): {dt_dias} días")
-    print(f"    - Tiempo a simular:    {tiempo_total_dias} días (10 años)")
+    print(f"[2] Configurando integrador simpléctico (Velocity Verlet)...")
+    print(f"    - dt: {dt_dias} días terrestres")
+    print(f"    - Límite temporal: {tiempo_total_dias} días (10 años)")
     
+    # Instanciamos el objeto que contiene la lógica astrofísica y el control de OpenMP
     motor = simulador_impacto.MotorVerletMonteCarlo(estado_base, dt_dias, tiempo_total_dias)
     
-    # 3. Configurar la estadística de Monte Carlo
-    num_simulaciones = 100_000  # Numero de universos a simular
+    # [FASE 3] Parametrización del Ruido Estocástico (Campana de Gauss)
+    num_simulaciones = 100000  # Universo estadístico
     
-    # Ruido estadístico
-    # sigma_pos = 1e-4 UA (~15,000 km de error de medición en la posición inicial)
-    # sigma_vel = 1e-5 UA/día de error en la velocidad detectada
-    sigma_pos = 1e-4 
-    sigma_vel = 1e-5 
+    # Desviación estándar impuesta a las observaciones iniciales del asteroide.
+    # Un sigma_pos mayor crea una 'nube de probabilidad' más expansiva.
+    if False:
+        sigma_pos = 1e-4  # Incertidumbre en posición (~15,000 km)
+        sigma_vel = 1e-5  # Incertidumbre en la velocidad telescópica 
+    else:
+        # Mayor incertidumbre
+        sigma_pos = 0.0
+        sigma_vel = 0.0
     
-    print(f"[3] Disparando Monte Carlo en paralelo (C++ liberando el GIL)...")
-    print(f"    - Simulaciones: {num_simulaciones:,}")
-    print(f"    - Ruido Posición: {sigma_pos} UA | Ruido Velocidad: {sigma_vel} UA/d")
+    print(f"[3] Liberando GIL e iniciando procesamiento asíncrono con OpenMP...")
+    print(f"    - Ciclos Monte Carlo a ejecutar: {num_simulaciones:,}")
     
-    # 4. EJECUCIÓN DEL MOTOR
+    # Control del cronómetro de hardware para evaluar rendimiento HPC
     inicio_cómputo = time.perf_counter()
     
+    # [FASE 4] EJECUCIÓN PURA (Se delega el 100% de los núcleos del procesador al backend de C++)
     resultados = motor.ejecutar_monte_carlo(
         num_corridas=num_simulaciones, 
         sigma_pos=sigma_pos, 
@@ -100,26 +132,26 @@ def main():
     fin_cómputo = time.perf_counter()
     tiempo_ejecucion = fin_cómputo - inicio_cómputo
     
-    # 5. Análisis de Resultados
+    # [FASE 5] Reporte y Formateo Analítico
     print("\n" + "="*60)
-    print(" RESULTADOS DEL ANÁLISIS ESTADÍSTICO")
+    print(" RESULTADOS ESTADÍSTICOS FINALES")
     print("="*60)
     
-    print(f"Tiempo de Cómputo CPU: {tiempo_ejecucion:.4f} segundos")
-    print(f"Velocidad de Simulación: {(num_simulaciones / tiempo_ejecucion):,.0f} universos/segundo\n")
+    print(f"-> Tiempo en CPU: {tiempo_ejecucion:.4f} segundos")
+    print(f"-> Tasa de rendimiento físico:   {(num_simulaciones / tiempo_ejecucion):,.0f} universos/segundo\n")
     
-    print("Desglose de Colisiones (Early Exits):")
+    print("Reporte de Early Exits (Choques):")
     if not resultados.desglose_colisiones:
-        print("  - Ninguna colisión registrada en ninguna simulación.")
+        print("  - Ningún asteroide intersectó barreras físicas durante los 10 años simulados.")
     else:
         for planeta, conteo in resultados.desglose_colisiones.items():
-            porcentaje = (conteo / num_simulaciones) * 100
-            print(f"  - Impactos en {planeta}: {conteo:,} ({porcentaje:.4f}%)")
+            porcentaje_local = (conteo / num_simulaciones) * 100
+            print(f"  - [{planeta}] colisiones absolutas: {conteo:,} ({porcentaje_local:.4f}%)")
             
     print("-" * 60)
-    # Mostramos el resultado vital
+    # Extracción de la probabilidad porcentual 
     prob = resultados.probabilidad_impacto * 100
-    print(f"🚀 PROBABILIDAD DE IMPACTO EN LA TIERRA: {prob:.15f} %")
+    print(f" PROBABILIDAD REAL DE IMPACTO EN LA TIERRA: {prob:.4f} %")
     print("="*60)
 
 if __name__ == "__main__":
