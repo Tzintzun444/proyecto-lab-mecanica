@@ -15,48 +15,63 @@ def crear_condiciones_iniciales():
     - Masas: Masas Solares (M_sun = 1.0)
     - Distancias: Unidades Astronómicas (UA)
     - Tiempos: Días terrestres
+    Modelo Idealizado (Elementos Medios J2000).
+    Datos referenciados de NASA Planetary Fact Sheet.
     """
-    # Instanciamos la memoria alineada en C++
     estado = simulador_impacto.EstadoSistemaSoA()
     
-    # Definimos la complejidad del entorno N-cuerpos
     estado.num_cuerpos = 4
     estado.nombres = ["Sol", "Tierra", "Jupiter", "Asteroide"]
     
-    # Asignación de campo másico. El asteroide se trata como "partícula de prueba" (0 masa)
+    # Masas (Relativas al Sol)
     estado.masa = [
-        1.0,                    # Sol (referencia gravitatoria)
-        3.0027e-6,              # Tierra
-        9.543e-4,               # Júpiter (principal perturbador caótico del sistema)
-        0.0                     # Asteroide Apolo genérico
+        1.0,                    # Sol
+        3.0027e-6,              # Tierra (Masa real)
+        9.543e-4,               # Júpiter (Masa real)
+        0.0                     # Asteroide (Partícula de prueba)
     ]
     
-    # Umbrales de colisión física (Radios convertidos a UA)
+    # Radios físicos en UA
     estado.radio = [
-        0.00465,                # Sol (~696,000 km)
-        4.2588e-5,              # Tierra (~6,371 km)
-        4.67e-4,                # Júpiter (~69,911 km)
-        2.0e-7                  # Asteroide tamaño mediano (~30 km)
+        0.00465,                # Sol
+        4.2588e-5,              # Tierra
+        4.67e-4,                # Júpiter
+        2.0e-7                  # Asteroide genérico
     ]
-    
-    # Prueba estándar:
-    if False:
-        # Coordenadas espaciales
-        estado.x = [0.0,  0.983,   5.20,  0.995]
-        estado.y = [0.0,  0.174,   0.00,  0.050]
-        estado.z = [0.0, -0.0001, -0.12,  0.001]
+
+    if True:
+        # Posiciones J2000 Idealizadas (Plano Eclíptico X-Y)
+        # Colocamos a los planetas en el eje X
+        estado.x = [
+            0.0,                    # Sol en el origen
+            1.0,                    # Tierra exactamente a 1 UA
+            5.2,                    # Júpiter a 5.2 UA
+            1.05                    # Asteroide iniciando un poco más allá de la Tierra
+        ]
+        estado.y = [0.0, 0.0, 0.0, 0.05] # Asteroide ligeramente desfasado en Y
+        estado.z = [0.0, 0.0, 0.0, 0.0]  # Sistema coplanar ideal
         
-        # Derivadas de posición (Velocidades orbitales)
-        # Ejemplo: La Tierra viaja a ~30 km/s (0.0172 UA/día)
-        estado.vx = [0.0, -0.003,   0.000, -0.002]
-        estado.vy = [0.0,  0.0172,  0.0075, 0.0165]
-        estado.vz = [0.0,  0.000,   0.000,  0.001]
+        # Velocidades orbitales ideales para órbitas circulares (Eje Y)
+        # v = sqrt(G * M_sol / r) -> Convertido a UA/día
+        estado.vx = [
+            0.0, 
+            0.0, 
+            0.0, 
+            -0.015  # Asteroide moviéndose hacia adentro (hacia el Sol)
+        ]
+        estado.vy = [
+            0.0, 
+            0.0172, # Tierra (~30 km/s)
+            0.0075, # Júpiter (~13 km/s)
+            0.0100  # Asteroide con velocidad transversal
+        ]
+        estado.vz = [0.0, 0.0, 0.0, 0.0]
         
-        # Inicializamos las variables del vector aceleración como contenedores vacíos, 
-        # la ley de Gravitación Universal en el motor físico las llenará automáticamente en t=0.
-        estado.ax = [0.0] * estado.num_cuerpos
-        estado.ay = [0.0] * estado.num_cuerpos
-        estado.az = [0.0] * estado.num_cuerpos
+        # Inicialización de aceleraciones
+        estado.ax = [0.0] * 4
+        estado.ay = [0.0] * 4
+        estado.az = [0.0] * 4
+        
     else:
         # === ESCENARIO DE CHOQUE SEGURO ===
         # Tomamos las coordenadas exactas de la Tierra
@@ -108,11 +123,11 @@ def main():
     
     # Desviación estándar impuesta a las observaciones iniciales del asteroide.
     # Un sigma_pos mayor crea una 'nube de probabilidad' más expansiva.
-    if False:
+    if True:
         sigma_pos = 1e-4  # Incertidumbre en posición (~15,000 km)
         sigma_vel = 1e-5  # Incertidumbre en la velocidad telescópica 
     else:
-        # Mayor incertidumbre
+        # Incertidumbre nula
         sigma_pos = 0.0
         sigma_vel = 0.0
     
